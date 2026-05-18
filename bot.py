@@ -18,7 +18,7 @@ import config
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
+    level=logging.INFO if config.DEBUG else logging.WARNING,
 )
 logger = logging.getLogger(__name__)
 
@@ -118,7 +118,33 @@ def get_status_keyboard(order_id, current_status):
         keyboard.append(row)
     return InlineKeyboardMarkup(keyboard)
 
-# ---------- دستورات مدیر ----------
+# ---------- دستورات ----------
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    is_admin = user_id in config.ADMINS
+    text = """🎫 **به ربات فروشگاه بلیت کنسرت خوش آمدید!**
+
+من به شما کمک می‌کنم سفارشات را پیگیری کنید.
+"""
+    if is_admin:
+        text += """
+**دستورات مدیر:**
+/today - سفارشات امروز
+/week - سفارشات این هفته
+/last <تعداد> - آخرین سفارشات
+/order <شماره> - جزییات سفارش
+/search <تلفن> - جستجوی سفارش با تلفن
+/report - گزارش فروش ۳۰ روزه
+/update <شماره> <وضعیت> - تغییر وضعیت سفارش
+"""
+    else:
+        text += """
+**دستورات مشتری:**
+/track <شماره سفارش> - وضعیت سفارش خود را ببینید
+/myorders <تلفن> - همه سفارشات خود را با تلفن جستجو کنید
+"""
+    await update.message.reply_text(text, parse_mode="Markdown")
+
 @admin_only
 async def today_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
     today = datetime.now().strftime("%Y-%m-%d")
@@ -237,7 +263,6 @@ async def monthly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"خطا در monthly_report: {e}")
         await update.message.reply_text("❌ خطا در گزارش.")
 
-# ---------- دستورات کاربر عادی ----------
 async def track_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args or not context.args[0].isdigit():
         await update.message.reply_text("ℹ️ روش استفاده: `/track 123`", parse_mode="Markdown")
@@ -264,32 +289,6 @@ async def my_orders_by_phone(update: Update, context: ContextTypes.DEFAULT_TYPE)
         msg += f"#{o['id']} - {o['total']} ₽ - {o['status']}\n"
     await update.message.reply_text(msg, parse_mode="Markdown")
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    is_admin = user_id in config.ADMINS
-    text = """🎫 **به ربات فروشگاه بلیت کنسرت خوش آمدید!**
-
-من به شما کمک می‌کنم سفارشات را پیگیری کنید.
-"""
-    if is_admin:
-        text += """
-**دستورات مدیر:**
-/today - سفارشات امروز
-/week - سفارشات این هفته
-/last <تعداد> - آخرین سفارشات
-/order <شماره> - جزییات سفارش
-/search <تلفن> - جستجوی سفارش با تلفن
-/report - گزارش فروش ۳۰ روزه
-/update <شماره> <وضعیت> - تغییر وضعیت سفارش
-"""
-    else:
-        text += """
-**دستورات مشتری:**
-/track <شماره سفارش> - وضعیت سفارش خود را ببینید
-/myorders <تلفن> - همه سفارشات خود را با تلفن جستجو کنید
-"""
-    await update.message.reply_text(text, parse_mode="Markdown")
-
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -311,8 +310,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.error(f"خطا در دکمه: {e}")
                 await query.message.reply_text("❌ خطا در تغییر وضعیت.")
 
-def build_application():
-    """ساخت اپلیکیشن ربات (بدون شروع polling)"""
+def main():
+    init_db()
     app = Application.builder().token(config.BOT_TOKEN).build()
     
     app.add_handler(CommandHandler("today", today_orders))
@@ -327,4 +326,8 @@ def build_application():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_callback))
     
-    return app
+    print("🚀 ربات با روش Polling شروع به کار کرد...")
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
