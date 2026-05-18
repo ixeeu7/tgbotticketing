@@ -16,14 +16,12 @@ from telegram.ext import (
 from woocommerce import API
 import config
 
-# راه‌اندازی لاگ
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO if config.DEBUG else logging.WARNING,
 )
 logger = logging.getLogger(__name__)
 
-# اتصال به WooCommerce
 wcapi = API(
     url=config.WC_URL,
     consumer_key=config.WC_CONSUMER_KEY,
@@ -46,7 +44,7 @@ def init_db():
     conn.commit()
     conn.close()
 
-# ========== محدودیت دسترسی مدیر ==========
+# ========== محدودیت مدیر ==========
 def admin_only(func):
     @wraps(func)
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
@@ -123,7 +121,7 @@ def get_status_keyboard(order_id, current_status):
         keyboard.append(row)
     return InlineKeyboardMarkup(keyboard)
 
-# ========== دستور عمومی ==========
+# ========== دستورات ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     is_admin = user_id in config.ADMINS
@@ -150,7 +148,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 """
     await update.message.reply_text(text, parse_mode="Markdown")
 
-# ========== دستورات مدیر ==========
 @admin_only
 async def today_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
     today = datetime.now().strftime("%Y-%m-%d")
@@ -269,7 +266,6 @@ async def monthly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"خطا در monthly_report: {e}")
         await update.message.reply_text("❌ خطا در گزارش.")
 
-# ========== دستورات کاربر عادی ==========
 async def track_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args or not context.args[0].isdigit():
         await update.message.reply_text("ℹ️ روش استفاده: `/track 123`", parse_mode="Markdown")
@@ -296,7 +292,6 @@ async def my_orders_by_phone(update: Update, context: ContextTypes.DEFAULT_TYPE)
         msg += f"#{o['id']} - {o['total']} ₽ - {o['status']}\n"
     await update.message.reply_text(msg, parse_mode="Markdown")
 
-# ========== دکمه‌های تعاملی ==========
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -318,14 +313,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.error(f"خطا در دکمه: {e}")
                 await query.message.reply_text("❌ خطا در تغییر وضعیت.")
 
-# ========== راه‌اندازی اصلی ==========
-def main():
-    init_db()
-    print("Bot main is running...")
-    import logging
-    logging.basicConfig(level=logging.INFO)
-    init_db()
-
+# ========== ساخت اپلیکیشن ربات (بدون polling) ==========
+def build_application():
+    """ساخت و پیکربندی Application بدون استارت polling"""
     app = Application.builder().token(config.BOT_TOKEN).build()
 
     # دستورات مدیر
@@ -340,15 +330,9 @@ def main():
     # دستورات کاربر
     app.add_handler(CommandHandler("track", track_order))
     app.add_handler(CommandHandler("myorders", my_orders_by_phone))
-
-    # دستور عمومی
     app.add_handler(CommandHandler("start", start))
 
     # دکمه‌ها
     app.add_handler(CallbackQueryHandler(button_callback))
 
-    print("🤖 ربات با موفقیت روشن شد...")
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
+    return app
