@@ -1,42 +1,64 @@
 import os
-import threading
 import logging
-from flask import Flask
-from bot import main as bot_main
+import asyncio
+import requests
+from flask import Flask, request, jsonify
+from bot import build_application, init_db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-@app.route('/')
-def home():
-    return "ربات WooCommerce من در حال اجراست!", 200
+# یک بار دیتابیس را می‌سازیم
+init_db()
 
-@app.route('/health')
-def health():
-    return "OK", 200
+# اپلیکیشن ربات را می‌سازیم (بدون استارت polling)
+telegram_app = build_application()
 
-def run_bot():
+# آدرس پایه سرویس – Render به صورت خودکار متغیر RENDER_EXTERNAL_URL را می‌دهد
+BASE_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://tgbotticketing.onrender.com")
+WEBHOOK_PATH = "/webhook"
+WEBHOOK_URL = BASE_URL + WEBHOOK_PATH
+
+# ثبت webhook در تلگرام
+def set_webhook():
+    token = os.environ.get("BOT_TOKEN")
+    if not token:
+        logger.error("BOT_TOKEN environment variable not set")
+        return
+    api_url = f"https://api.telegram.org/bot{token}/setWebhook?url={WEBHOOK_URL}"
     try:
-        logger.info("Starting bot main function...")
-        # بررسی وجود توکن
-        token = os.environ.get("BOT_TOKEN")
-        if not token:
-            logger.error("BOT_TOKEN environment variable not set!")
-            return
-        logger.info("BOT_TOKEN found, starting bot...")
-        bot_main()
+        resp = requests.get(api_url, timeout=10)
+        if resp.status_code == 200 and resp.json().get("ok"):
+            logger.info(f"✅ Webhook registered successfully at {WEBHOOK_URL}")
+        else:
+            logger.error(f"❌ Failed to set webhook: {resp.text}")
     except Exception as e:
-        logger.exception(f"Failed to start bot: {e}")
+        logger.exception("Exception while setting webhook")
 
-# فقط در صورتی که این فایل به عنوان main اجرا نشده باشد (یعنی در محیط گانیکورن)
-# از ترد استفاده می‌کنیم. در غیر این صورت، خود گانیکورن یک بار تابع run_bot را صدا می‌زند.
-if __name__ != '__main__':
-    # تاخیر کوتاه برای اطمینان از آماده شدن محیط
-    import time
-    time.sleep(2)
-    threading.Thread(target=run_bot, daemon=True).start()
-else:
-    # برای اجرای لوکال (python app.py)
-    run_bot()
+# صفحه اصلی برای سلامت
+@app.route('/', methods=['GET'])
+def home():
+    return "ربات WooCommerce (webhook mode) در حال اجرا است.", 200
+
+# اندپوینت webhook
+@app.route(WEBHOOK_PATH, methods=['POST'])
+async def webhook():
+    try:
+        update_data = request.get_json(force=True)
+        from telegram import Update
+        update = Update.de_json(update_data, telegram_app.bot)
+        # پردازش آسنکرون
+        await telegram_app.process_update(update)
+        return "OK", 200
+    except Exception as e:
+        logger.exception("Error in webhook handler")
+        return "Error", 500
+
+# در زمان شروع برنامه، webhook را ثبت می‌کنیم
+set_webhook()
+
+if __name__ == "__main__":
+    # برای تست لوکال (اختیاری)
+    app.run(port=5000, debug=True)
