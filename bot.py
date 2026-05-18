@@ -118,7 +118,6 @@ def get_status_keyboard(order_id, current_status):
         keyboard.append(row)
     return InlineKeyboardMarkup(keyboard)
 
-# ---------- دستورات ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     is_admin = user_id in config.ADMINS
