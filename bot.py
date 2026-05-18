@@ -18,7 +18,7 @@ import config
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO if config.DEBUG else logging.WARNING,
+    level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,6 @@ wcapi = API(
     timeout=30,
 )
 
-# ========== دیتابیس ==========
 def init_db():
     conn = sqlite3.connect(config.DB_NAME)
     c = conn.cursor()
@@ -44,7 +43,6 @@ def init_db():
     conn.commit()
     conn.close()
 
-# ========== محدودیت مدیر ==========
 def admin_only(func):
     @wraps(func)
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
@@ -55,7 +53,6 @@ def admin_only(func):
         return await func(update, context, *args, **kwargs)
     return wrapper
 
-# ========== توابع کمکی API ==========
 def get_order_by_id(order_id):
     try:
         order = wcapi.get(f"orders/{order_id}").json()
@@ -121,33 +118,7 @@ def get_status_keyboard(order_id, current_status):
         keyboard.append(row)
     return InlineKeyboardMarkup(keyboard)
 
-# ========== دستورات ==========
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    is_admin = user_id in config.ADMINS
-    text = """🎫 **به ربات فروشگاه بلیت کنسرت خوش آمدید!**
-
-من به شما کمک می‌کنم سفارشات را پیگیری کنید.
-"""
-    if is_admin:
-        text += """
-**دستورات مدیر:**
-/today - سفارشات امروز
-/week - سفارشات این هفته
-/last <تعداد> - آخرین سفارشات
-/order <شماره> - جزییات سفارش
-/search <تلفن> - جستجوی سفارش با تلفن
-/report - گزارش فروش ۳۰ روزه
-/update <شماره> <وضعیت> - تغییر وضعیت سفارش
-"""
-    else:
-        text += """
-**دستورات مشتری:**
-/track <شماره سفارش> - وضعیت سفارش خود را ببینید
-/myorders <تلفن> - همه سفارشات خود را با تلفن جستجو کنید
-"""
-    await update.message.reply_text(text, parse_mode="Markdown")
-
+# ---------- دستورات مدیر ----------
 @admin_only
 async def today_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
     today = datetime.now().strftime("%Y-%m-%d")
@@ -266,6 +237,7 @@ async def monthly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"خطا در monthly_report: {e}")
         await update.message.reply_text("❌ خطا در گزارش.")
 
+# ---------- دستورات کاربر عادی ----------
 async def track_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args or not context.args[0].isdigit():
         await update.message.reply_text("ℹ️ روش استفاده: `/track 123`", parse_mode="Markdown")
@@ -292,6 +264,32 @@ async def my_orders_by_phone(update: Update, context: ContextTypes.DEFAULT_TYPE)
         msg += f"#{o['id']} - {o['total']} ₽ - {o['status']}\n"
     await update.message.reply_text(msg, parse_mode="Markdown")
 
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    is_admin = user_id in config.ADMINS
+    text = """🎫 **به ربات فروشگاه بلیت کنسرت خوش آمدید!**
+
+من به شما کمک می‌کنم سفارشات را پیگیری کنید.
+"""
+    if is_admin:
+        text += """
+**دستورات مدیر:**
+/today - سفارشات امروز
+/week - سفارشات این هفته
+/last <تعداد> - آخرین سفارشات
+/order <شماره> - جزییات سفارش
+/search <تلفن> - جستجوی سفارش با تلفن
+/report - گزارش فروش ۳۰ روزه
+/update <شماره> <وضعیت> - تغییر وضعیت سفارش
+"""
+    else:
+        text += """
+**دستورات مشتری:**
+/track <شماره سفارش> - وضعیت سفارش خود را ببینید
+/myorders <تلفن> - همه سفارشات خود را با تلفن جستجو کنید
+"""
+    await update.message.reply_text(text, parse_mode="Markdown")
+
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -313,12 +311,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.error(f"خطا در دکمه: {e}")
                 await query.message.reply_text("❌ خطا در تغییر وضعیت.")
 
-# ========== ساخت اپلیکیشن ربات (بدون polling) ==========
 def build_application():
-    """ساخت و پیکربندی Application بدون استارت polling"""
+    """ساخت اپلیکیشن ربات (بدون شروع polling)"""
     app = Application.builder().token(config.BOT_TOKEN).build()
-
-    # دستورات مدیر
+    
     app.add_handler(CommandHandler("today", today_orders))
     app.add_handler(CommandHandler("week", week_orders))
     app.add_handler(CommandHandler("last", last_orders))
@@ -326,13 +322,9 @@ def build_application():
     app.add_handler(CommandHandler("search", search_by_phone))
     app.add_handler(CommandHandler("update", update_status))
     app.add_handler(CommandHandler("report", monthly_report))
-
-    # دستورات کاربر
     app.add_handler(CommandHandler("track", track_order))
     app.add_handler(CommandHandler("myorders", my_orders_by_phone))
     app.add_handler(CommandHandler("start", start))
-
-    # دکمه‌ها
     app.add_handler(CallbackQueryHandler(button_callback))
-
+    
     return app
