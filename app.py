@@ -1,64 +1,60 @@
 import os
 import logging
-import asyncio
-import requests
 from flask import Flask, request, jsonify
-from bot import build_application, init_db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# یک بار دیتابیس را می‌سازیم
-init_db()
+# توکن ربات را از متغیر محیطی بخوانید
+TOKEN = os.environ.get("BOT_TOKEN", "")
 
-# اپلیکیشن ربات را می‌سازیم (بدون استارت polling)
-telegram_app = build_application()
+@app.route('/', methods=['GET'])
+def home():
+    return "ربات در حال اجراست", 200
 
-# آدرس پایه سرویس – Render به صورت خودکار متغیر RENDER_EXTERNAL_URL را می‌دهد
-BASE_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://tgbotticketing.onrender.com")
-WEBHOOK_PATH = "/webhook"
-WEBHOOK_URL = BASE_URL + WEBHOOK_PATH
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    try:
+        # دریافت داده از تلگرام
+        update_data = request.get_json(force=True)
+        logger.info(f"دریافت درخواست: {update_data}")
 
-# ثبت webhook در تلگرام
+        # استخراج chat_id و متن پیام
+        chat_id = None
+        text = None
+        if 'message' in update_data:
+            chat_id = update_data['message'].get('chat', {}).get('id')
+            text = update_data['message'].get('text', '')
+
+        # پاسخ ساده (برای تست)
+        if chat_id and TOKEN:
+            import requests
+            send_url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+            requests.post(send_url, json={
+                'chat_id': chat_id,
+                'text': 'ربات فعال است و پیام شما را دریافت کرد!'
+            })
+        return "OK", 200
+    except Exception as e:
+        logger.exception("خطا در پردازش وب‌هوک")
+        return "Internal Server Error", 500
+
+# تنظیم وب‌هوک در زمان استارت (فقط در پروسه اصلی)
 def set_webhook():
-    token = os.environ.get("BOT_TOKEN")
-    if not token:
-        logger.error("BOT_TOKEN environment variable not set")
-        return
-    api_url = f"https://api.telegram.org/bot{token}/setWebhook?url={WEBHOOK_URL}"
+    import requests
+    render_url = os.environ.get("RENDER_EXTERNAL_URL", "https://tgbotticketing.onrender.com")
+    webhook_url = f"{render_url}/webhook"
+    api_url = f"https://api.telegram.org/bot{TOKEN}/setWebhook?url={webhook_url}"
     try:
         resp = requests.get(api_url, timeout=10)
         if resp.status_code == 200 and resp.json().get("ok"):
-            logger.info(f"✅ Webhook registered successfully at {WEBHOOK_URL}")
+            logger.info(f"✅ Webhook تنظیم شد: {webhook_url}")
         else:
-            logger.error(f"❌ Failed to set webhook: {resp.text}")
+            logger.error(f"❌ خطا در تنظیم وب‌هوک: {resp.text}")
     except Exception as e:
         logger.exception("Exception while setting webhook")
 
-# صفحه اصلی برای سلامت
-@app.route('/', methods=['GET'])
-def home():
-    return "ربات WooCommerce (webhook mode) در حال اجرا است.", 200
-
-# اندپوینت webhook
-@app.route(WEBHOOK_PATH, methods=['POST'])
-async def webhook():
-    try:
-        update_data = request.get_json(force=True)
-        from telegram import Update
-        update = Update.de_json(update_data, telegram_app.bot)
-        # پردازش آسنکرون
-        await telegram_app.process_update(update)
-        return "OK", 200
-    except Exception as e:
-        logger.exception("Error in webhook handler")
-        return "Error", 500
-
-# در زمان شروع برنامه، webhook را ثبت می‌کنیم
-set_webhook()
-
-if __name__ == "__main__":
-    # برای تست لوکال (اختیاری)
-    app.run(port=5000, debug=True)
+if __name__ != '__main__':
+    set_webhook()
