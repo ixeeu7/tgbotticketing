@@ -321,6 +321,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ========== راه‌اندازی اصلی ==========
 def main():
     init_db()
+    print("Bot main is running...")
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    init_db()
+
     app = Application.builder().token(config.BOT_TOKEN).build()
 
     # دستورات مدیر
